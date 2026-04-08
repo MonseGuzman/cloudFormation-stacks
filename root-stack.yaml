@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Top-level stack template that deploys a nested stack
+
+Resources:
+######## NETWORKING NESTED STACKS FOR EC2
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: components/network.yaml
+      Parameters:
+        PublicInstance: 'No'
+
+####### EC2 NESTED STACKS
+  EC2Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: components/ec2.yaml
+      TimeoutInMinutes: 30
+      Parameters:
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+        SubnetId: !GetAtt NetworkStack.Outputs.SubnetId
+        SecurityGroupId: !GetAtt NetworkStack.Outputs.SecurityGroupId
+        InstanceType: t2.micro
+        InstanceOS: Linux
+
+######## LOAD BALANCER NESTED STACKS
+  LoadBalancerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: components/loadbalancer.yaml
+      TimeoutInMinutes: 30
+      Parameters:
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+        SubnetId: !GetAtt NetworkStack.Outputs.SubnetId
+        InstanceId1: !GetAtt EC2Stack.Outputs.InstanceId 
+
+
+Outputs:
+  SSHKeyParameter:
+    Description: SSM Parameter with SSH Key content
+    Value: !GetAtt EC2Stack.Outputs.KeySSMParameter
