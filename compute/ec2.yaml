@@ -1,8 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  AWS sample template. Create a Instance, Security Group rules and a SSH Key. 
+
 Parameters:
   ResourceName:
     Description: Name of the resources
     Type: String
     Default: 'MonseG'
+  VPCId:
+    Description: VPC Id from network stack
+    Type: String
+  SubnetId:
+    Description: Subnet Id from network stack
+    Type: String
+  SecurityGroupId:
+    Description: Security Group Id from network stack
+    Type: String
   InstanceType:
     Description: Select type of the instance
     Type: String
@@ -12,10 +25,6 @@ Parameters:
     AllowedValues: ["Linux", "Ubuntu"]
     Default: "Ubuntu"
     ConstraintDescription: Must be Linux or Ubuntu
-  TemplateURL:
-    Description: URL of the stack template
-    Type: String
-    Default: /networking/network.yaml
 
 Mappings:
   AWSRegionAMI:
@@ -43,21 +52,12 @@ Rules:
         AssertDescription: 'For this region, the instance type must choose between "t2.micro", "t2.nano" or "t2.small" at least'
 
 Resources:
-  # NESTED STACKS
-  NetworkingResources:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Ref TemplateURL
-      TimeoutInMinutes: 10
-      Parameters:
-        PublicInstance: 'Yes'
-
 ########################### Security Group Rules
   IngressRule1:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       Description: Allow connections from specified CIDR ranges
-      GroupId: !GetAtt NetworkingResources.Outputs.VPCId
+      GroupId: !Ref VPCId
       CidrIp: 0.0.0.0/0
       FromPort: 80
       ToPort: 80
@@ -66,7 +66,7 @@ Resources:
   IngressRule2:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !GetAtt NetworkingResources.Outputs.VPCId
+      GroupId: !Ref VPCId
       CidrIp: 0.0.0.0/0 # myip
       FromPort: 22
       ToPort: 22
@@ -89,7 +89,7 @@ Resources:
     Properties:
       ImageId: !FindInMap [AWSRegionAMI, !Ref 'AWS::Region', !Ref InstanceOS]
       InstanceType: !Ref InstanceType
-      SubnetId: !GetAtt NetworkingResources.Outputs.SubnetId
+      SubnetId: !Ref SubnetId
       KeyName: !Sub '${ResourceName}-key'
       UserData:
         Fn::Base64: |
@@ -100,7 +100,7 @@ Resources:
           systemctl enable httpd
           echo "<h1> Hello World from $(hostname -f)<a/h1>" > /var/www/html/index.html
       SecurityGroupIds:
-      - !GetAtt NetworkingResources.Outputs.SecurityGroupId
+        - !Ref SecurityGroupId
       Tags: 
         - Key: Name
           Value: !Sub '${ResourceName}-${AWS::StackName}-ec2'
