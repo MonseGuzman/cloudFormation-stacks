@@ -19,7 +19,7 @@ The project follows a modular structure:
 ├── components/              # Directory for child templates
 │   └── cloudwatch.yaml      # Compute resources (EC2, ASG, etc.)
 │   ├── ec2.yaml             # Compute layer (EC2, SSH key, SG rules)
-│   ├── loadbalancer.yaml    # Networking layer (VPC, Subnets, IGW)
+│   ├── loadbalancer.yaml    # Traffic layer (LB, WAF)
 │   └── network.yaml         # Compute resources (EC2, ASG, etc.)
 ├── root-stack.yaml          # Main template to deploy all nested stacks
 └── parameters/              # (Optional) Environment-specific configurations
@@ -31,7 +31,7 @@ The project follows a modular structure:
 - _(Optional)_ An S3 Bucket to host the child templates (CloudFormation requires nested templates to be accessible via an S3 URL or file path during deployment).
 
 ### 🏃🏻‍♀️ How to Deploy
-If you previosly save those template in S3 bucket, upload child templates to S3: _Nested stacks require the TemplateURL to point to a valid location._
+If you previously save those template in S3 bucket, upload child templates to S3: _Nested stacks require the TemplateURL to point to a valid location._
 
 ```bash
 aws s3 cp components/ s3://your-bucket-name/cloudformation/components/ --recursive
