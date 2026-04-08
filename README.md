@@ -50,5 +50,6 @@ In the case, you do not create a S3 Bucket, you can run the `deploy-locally.sh` 
 
 ```bash
 chmod +x ./deploy-locally.sh
+
 ./deploy-locally.sh
 ```
