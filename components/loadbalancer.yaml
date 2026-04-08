@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  AWS sample template. Create Load Balancer, Target Group, Listener and WAF.
+
+Parameters:
+  ResourceName:
+    Description: Name of the resources
+    Type: String
+    Default: 'MonseG'
+  VPCId:
+    Description: The ID of the VPC where resources will be created
+    Type: String
+  SubnetId:
+    Description: Subnet ID to be used by the load balancer
+    Type: String
+  InstanceId1:
+    Description: ID of the first EC2 instance to be registered with the target group
+    Type: String
+    Default: ''
+
+Resources:
+########################### Security Group
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: 'ALB Allowed Ports.'
+      GroupName: !Sub '${ResourceName}-${AWS::StackName}-lb-sg'
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: '0.0.0.0/0'
+          FromPort: 80
+          ToPort: 80
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-lb-sg'
+
+############################# Load Balancer Configuration
+  ApplicationLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      Name: !Sub '${ResourceName}-${AWS::StackName}-alb'
+      Type: 'application'
+      Scheme: 'internet-facing'
+      # IpAddressType: 'ipv4'
+      SecurityGroups: 
+        - !GetAtt SecurityGroup.GroupId
+      Subnets: 
+        - !Ref SubnetId
+      Tags: 
+        - Key: 'Name'
+          Value: !Sub '${ResourceName}-${AWS::StackName}-alb'
+
+################################ Target Group Configuration
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ResourceName}-${AWS::StackName}-alb-tg'
+      TargetType: 'instance'
+      Protocol: 'HTTP'
+      Port: 80
+      VpcId: !Ref VPCId
+      Targets: 
+        - Id: !Ref InstanceId1
+          Port: 80
+        # - Id: !Ref InstanceTwo
+        #   Port: 80
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 15
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      UnhealthyThresholdCount: 3
+      Tags: 
+        - Key: 'Name'
+          Value: !Sub '${ResourceName}-${AWS::StackName}-alb-tg'
+
+############################## Listener Configuration
+  LBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: 
+        - Type: 'forward'
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLB
+      Protocol: 'HTTP'
+      Port: 80
+
+############################## WAF
+  WAFLoadBalancer: 
+    Type: AWS::WAF::WebACL
+    Properties: 
+      Name: !Sub '${ResourceName}-${AWS::StackName}-waf'
+      DefaultAction: 
+        Type: "ALLOW"
+      MetricName: !Sub '${ResourceName}-${AWS::StackName}-metric'
+      Rules: 
+        - RuleId: !Ref WAFRule1
+          Priority: 1
+          Action: 
+            Type: 'BLOCK'
+
+  WAFRule1:
+    Type: AWS::WAF::Rule
+    Properties: 
+      MetricName: !Sub '${ResourceName}-${AWS::StackName}-rule1'
+      Name: !Sub '${ResourceName}-${AWS::StackName}-rule1'
+      Predicates: 
+        - Type: 'IPMatch'
+          Negated: true
+          DataId: ''
+
+  ACLAssociation:
+    Type: "AWS::WAFRegional::WebACLAssociation"
+    Properties:
+      ResourceArn: !Ref ApplicationLB
+      WebACLId: !Ref WAFLoadBalancer

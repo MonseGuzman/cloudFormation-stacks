@@ -117,6 +117,9 @@ Outputs:
       - ''
       - - '/ec2/keypair/'
         - !GetAtt SSHKey.KeyPairId
+  InstanceId:
+    Description: Id of the instance
+    Value: !Ref Instance
   # PublicIP:
   #   Description: Id of the instance
   #   Value: !GetAtt MyInstance.PublicIp
