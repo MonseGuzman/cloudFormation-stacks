@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  AWS sample template. Create a VPC, a subnet, Internet Gateway (optional) and its connections. 
+
+Parameters:
+  ResourceName:
+    Description: Name of the resources
+    Type: String
+    Default: 'MonseG'
+  SecurityGroupDescription:
+    Description: Description of the security group
+    Type: String
+    Default: 'Allow connections from specified CIDR ranges'
+  PublicInstance:
+    Description: Select if you want public instance
+    Type: String
+    AllowedValues: ["Yes", "No"]
+    Default: "Yes" 
+
+Conditions:
+  CreateInternetGateway: !Equals [!Ref PublicInstance, "Yes"]
+
+########################### VPC Configuration
+Resources:
+  MainVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: '10.123.0.0/16'
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-vpc'
+
+############################ Subnet and Route Configuration
+  MySubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: '10.123.1.0/24'
+      MapPublicIpOnLaunch: !If [CreateInternetGateway, true, false]
+      VpcId: !Ref MainVPC
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-subnet'
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref MainVPC
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-rt'
+
+  Route:
+    Type: AWS::EC2::Route
+    Condition: CreateInternetGateway
+    Properties: 
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+
+  Association1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref MySubnet
+
+############################# Internet Gateway Configuration
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateInternetGateway
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-ig'
+  
+  VPCAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateInternetGateway
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref MainVPC
+
+############################## Security Group Configuration
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref MainVPC
+      GroupDescription: !Ref SecurityGroupDescription
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-sg'
+
+Outputs:
+  VPCId:
+    Description: 'VPC Id'
+    Value: !GetAtt MainVPC.VpcId
+  SubnetId:
+    Description: 'Subnet Id'
+    Value: !GetAtt MySubnet.SubnetId
+  SecurityGroupId:
+    Description: 'Security Group Id'
+    Value: !GetAtt SecurityGroup.GroupId
