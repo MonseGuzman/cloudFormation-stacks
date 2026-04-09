@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::LanguageExtensions
 Description: |
   AWS sample template. Create Load Balancer, Target Group, Listener and WAF.
 
@@ -10,13 +11,17 @@ Parameters:
   VPCId:
     Description: The ID of the VPC where resources will be created
     Type: String
-  SubnetId:
-    Description: Subnet ID to be used by the load balancer
-    Type: String
+  SubnetIds:
+    Description: Subnet IDs to be used by the load balancer
+    Type: List<String>
   InstanceId1:
     Description: ID of the first EC2 instance to be registered with the target group
     Type: String
     Default: ''
+  AllowedIPs:
+    Description: List of allowed IP addresses in CIDR format (e.g., 192.168.1.0/24)
+    Type: CommaDelimitedList
+    Default: '192.168.1.0/24'
 
 Resources:
 ########################### Security Group
@@ -35,23 +40,23 @@ Resources:
         - Key: Name
           Value: !Sub '${ResourceName}-${AWS::StackName}-lb-sg'
 
-############################# Load Balancer Configuration
+########################### Load Balancer Configuration
   ApplicationLB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties: 
       Name: !Sub '${ResourceName}-${AWS::StackName}-alb'
       Type: 'application'
       Scheme: 'internet-facing'
-      # IpAddressType: 'ipv4'
+      IpAddressType: 'ipv4'
       SecurityGroups: 
         - !GetAtt SecurityGroup.GroupId
       Subnets: 
-        - !Ref SubnetId
+        - !Ref SubnetIds
       Tags: 
         - Key: 'Name'
           Value: !Sub '${ResourceName}-${AWS::StackName}-alb'
 
-################################ Target Group Configuration
+########################### Target Group Configuration
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -76,7 +81,7 @@ Resources:
         - Key: 'Name'
           Value: !Sub '${ResourceName}-${AWS::StackName}-alb-tg'
 
-############################## Listener Configuration
+############################ Listener Configuration
   LBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -87,32 +92,112 @@ Resources:
       Protocol: 'HTTP'
       Port: 80
 
-############################## WAF
-  WAFLoadBalancer: 
-    Type: AWS::WAF::WebACL
+########################### Restrict IP Addresses
+  IPSetAllowed:
+    Type: AWS::WAFv2::IPSet
+    Properties: 
+      Name: !Sub '${ResourceName}-${AWS::StackName}-ipset'
+      Description: 'IP set for allowing specific IP addresses'
+      Scope: 'REGIONAL'
+      IPAddressVersion: 'IPV4'
+      Addresses: 
+        - !Ref AllowedIPs
+
+########################### WAF
+  WAFLoadBalancer:
+    Type: AWS::WAFv2::WebACL
     Properties: 
       Name: !Sub '${ResourceName}-${AWS::StackName}-waf'
+      Scope: 'REGIONAL'
       DefaultAction: 
-        Type: "ALLOW"
-      MetricName: !Sub '${ResourceName}-${AWS::StackName}-metric'
+        Allow: {}
+      VisibilityConfig: 
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${ResourceName}-${AWS::StackName}-waf-metric'
       Rules: 
-        - RuleId: !Ref WAFRule1
+        # Rule 1: Allow specific IP addresses
+        - Name: 'AllowSpecificIPs'
+          Priority: 0
+          Action:
+            Allow: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'AllowSpecificIPs'
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt IPSetAllowed.Arn
+        
+        # Rule 2: Block XSS attacks
+        - Name: 'BlockXSSAttacks'
           Priority: 1
-          Action: 
-            Type: 'BLOCK'
-
-  WAFRule1:
-    Type: AWS::WAF::Rule
-    Properties: 
-      MetricName: !Sub '${ResourceName}-${AWS::StackName}-rule1'
-      Name: !Sub '${ResourceName}-${AWS::StackName}-rule1'
-      Predicates: 
-        - Type: 'IPMatch'
-          Negated: true
-          DataId: ''
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'BlockXSSAttacks'
+          Statement:
+            XssMatchStatement:
+              FieldToMatch:
+                Body: {}
+              TextTransformations:
+                - Type: 'HTML_ENTITY_DECODE'
+                  Priority: 0
+                - Type: 'LOWERCASE'
+                  Priority: 1
+        
+        # Rule 3: Rate limiting
+        - Name: 'RateLimitRule'
+          Priority: 2
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'RateLimitRule'
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: 'IP'
+        
+        # Rule 4: Geographic restriction
+        - Name: 'GeoBlockRule'
+          Priority: 3
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'GeoBlockRule'
+          Statement:
+            GeoMatchStatement:
+              CountryCodes:
+                - 'CN'
+                - 'RU'
+        
+        # Rule 5: SQL Injection protection
+        - Name: 'SQLInjectionRule'
+          Priority: 4
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'SQLInjectionRule'
+          Statement:
+            SqliMatchStatement:
+              FieldToMatch:
+                Body: {}
+              TextTransformations:
+                - Type: 'URL_DECODE'
+                  Priority: 0
+                - Type: 'HTML_ENTITY_DECODE'
+                  Priority: 1
 
   ACLAssociation:
-    Type: "AWS::WAFRegional::WebACLAssociation"
+    Type: "AWS::WAFv2::WebACLAssociation"
     Properties:
       ResourceArn: !Ref ApplicationLB
-      WebACLId: !Ref WAFLoadBalancer
+      WebACLArn: !GetAtt WAFLoadBalancer.Arn

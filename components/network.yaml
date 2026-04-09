@@ -15,36 +15,67 @@ Parameters:
     Description: Select if you want public instance
     Type: String
     AllowedValues: ["Yes", "No"]
-    Default: "Yes" 
+    Default: "Yes"
+  VPCId:
+    Description: The ID of the VPC where resources will be created
+    Type: String
+    Default: ""
+  VPCCIDR:
+    Description: CIDR block for the VPC (e.g., 10.0.0.0/16)
+    Type: String
+    Default: "10.123.0.0/16"
+  # SubnetId:
+  #   Description: Subnet ID to be used where resources will be created
+  #   Type: String
+  #   Default: ""
+  SubnetsCIDR:
+    Description: CIDR block for the two subnets
+    Type: CommaDelimitedList
+    Default: "10.123.1.0/24,10.123.1.128/25"
 
 Conditions:
   CreateInternetGateway: !Equals [!Ref PublicInstance, "Yes"]
+  CreateVPC: !Equals [!Ref VPCId, ""]
+  # CreateSubnet: !Equals [!Ref SubnetId, ""]
 
-########################### VPC Configuration
 Resources:
+########################### VPC Configuration
   MainVPC:
     Type: AWS::EC2::VPC
+    Condition: CreateVPC
     Properties: 
-      CidrBlock: '10.123.0.0/16'
+      CidrBlock: !Ref VPCCIDR
       Tags: 
         - Key: Name
           Value: !Sub '${ResourceName}-${AWS::StackName}-vpc'
 
-############################ Subnet and Route Configuration
-  MySubnet:
+############################ Subnets Configuration
+  Subnet1:
     Type: AWS::EC2::Subnet
+    # Condition: CreateSubnet
     Properties:
-      CidrBlock: '10.123.1.0/24'
-      MapPublicIpOnLaunch: !If [CreateInternetGateway, true, false]
-      VpcId: !Ref MainVPC
+      VpcId: !If [CreateVPC, !Ref MainVPC, !Ref VPCId]
+      CidrBlock: !Select [0, !Ref SubnetsCIDR]
       Tags: 
         - Key: Name
-          Value: !Sub '${ResourceName}-${AWS::StackName}-subnet'
+          Value: !Sub '${ResourceName}-${AWS::StackName}-subnet1'
+  
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    # Condition: CreateSubnet
+    Properties:
+      VpcId: !If [CreateVPC, !Ref MainVPC, !Ref VPCId]
+      CidrBlock: !Select [1, !Ref SubnetsCIDR]
+      Tags: 
+        - Key: Name
+          Value: !Sub '${ResourceName}-${AWS::StackName}-subnet2'
 
+########################### Route Table Configuration
   RouteTable:
     Type: AWS::EC2::RouteTable
+    Condition: CreateInternetGateway
     Properties: 
-      VpcId: !Ref MainVPC
+      VpcId: !If [CreateVPC, !Ref MainVPC, !Ref VPCId]
       Tags: 
         - Key: Name
           Value: !Sub '${ResourceName}-${AWS::StackName}-rt'
@@ -58,10 +89,18 @@ Resources:
       RouteTableId: !Ref RouteTable
 
   Association1:
+    Condition: CreateInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties: 
       RouteTableId: !Ref RouteTable
-      SubnetId: !Ref MySubnet
+      SubnetId: !Ref Subnet1 #!If [CreateSubnet, !Ref MySubnet, !Ref SubnetId]
+  
+  Association2:
+    Condition: CreateInternetGateway
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref Subnet2 #!If [CreateSubnet, !Ref MySubnet, !Ref SubnetId]
 
 ############################# Internet Gateway Configuration
   InternetGateway:
@@ -77,25 +116,44 @@ Resources:
     Condition: CreateInternetGateway
     Properties: 
       InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref MainVPC
+      VpcId: !If [CreateVPC, !Ref MainVPC, !Ref VPCId]
 
 ############################## Security Group Configuration
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref MainVPC
+      VpcId: !If [CreateVPC, !Ref MainVPC, !Ref VPCId]
       GroupDescription: !Ref SecurityGroupDescription
       Tags: 
         - Key: Name
           Value: !Sub '${ResourceName}-${AWS::StackName}-sg'
 
+  IngressRule1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow connections from specified CIDR ranges
+      GroupId: !Ref SecurityGroup
+      CidrIp: 0.0.0.0/0
+      FromPort: 80
+      ToPort: 80
+      IpProtocol: tcp
+
+  IngressRule2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      CidrIp: 0.0.0.0/0 # myip
+      FromPort: 22
+      ToPort: 22
+      IpProtocol: tcp
+
 Outputs:
   VPCId:
     Description: 'VPC Id'
-    Value: !GetAtt MainVPC.VpcId
-  SubnetId:
-    Description: 'Subnet Id'
-    Value: !GetAtt MySubnet.SubnetId
+    Value: !If [CreateVPC, !GetAtt MainVPC.VpcId, !Ref VPCId]
+  SubnetIds:
+    Description: 'Subnets Id'
+    Value: !Join [',', [!GetAtt Subnet1.SubnetId, !GetAtt Subnet2.SubnetId]]
   SecurityGroupId:
     Description: 'Security Group Id'
     Value: !GetAtt SecurityGroup.GroupId

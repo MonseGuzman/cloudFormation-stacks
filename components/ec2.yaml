@@ -1,15 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: |
-  AWS sample template. Create a Instance, Security Group rules and a SSH Key. 
+  AWS sample template. Create a Instance, and a SSH Key. 
 
 Parameters:
   ResourceName:
     Description: Name of the resources
     Type: String
     Default: 'MonseG'
-  VPCId:
-    Description: VPC Id from network stack
-    Type: String
   SubnetId:
     Description: Subnet Id from network stack
     Type: String
@@ -43,41 +40,21 @@ Mappings:
 
 Rules:
   InstanceTypeAllow:
-    RuleCondition: !Fn::Equals [!Ref 'AWS::Region', 'us-east-1']
+    # RuleCondition: !Fn::Equals [!Ref 'AWS::Region', 'us-east-1']
     Assertions:
       - Assert:
           'Fn::Contains':
             - ["t2.nano", "t2.micro", "t2.small"]
             - !Ref InstanceType
-        AssertDescription: 'For this region, the instance type must choose between "t2.micro", "t2.nano" or "t2.small" at least'
+        AssertDescription: 'For this deployment, the instance type must choose between "t2.micro", "t2.nano" or "t2.small"'
 
 Resources:
-########################### Security Group Rules
-  IngressRule1:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      Description: Allow connections from specified CIDR ranges
-      GroupId: !Ref VPCId
-      CidrIp: 0.0.0.0/0
-      FromPort: 80
-      ToPort: 80
-      IpProtocol: tcp
-
-  IngressRule2:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPCId
-      CidrIp: 0.0.0.0/0 # myip
-      FromPort: 22
-      ToPort: 22
-      IpProtocol: tcp
-
 ############################# Key Pair Configuration
   SSHKey:
     Type: AWS::EC2::KeyPair
     Properties: 
       KeyFormat: pem
-      KeyName: !Sub '${ResourceName}-key'
+      KeyName: !Sub '${ResourceName}-${AWS::StackName}-key'
       KeyType: rsa
       Tags: 
         - Key: Name
@@ -90,7 +67,7 @@ Resources:
       ImageId: !FindInMap [AWSRegionAMI, !Ref 'AWS::Region', !Ref InstanceOS]
       InstanceType: !Ref InstanceType
       SubnetId: !Ref SubnetId
-      KeyName: !Sub '${ResourceName}-key'
+      KeyName: !Sub '${ResourceName}-${AWS::StackName}-key'
       UserData:
         Fn::Base64: |
           #!/bin/bash
